@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -247,6 +248,36 @@ class S3ClientTest {
     List<S3Object> result = s3Client.listObjects(bucket, keyRoot);
 
     assertThat(result.size()).isEqualTo(s3BatchSize + extraKeys);
+  }
+
+  @Test
+  void listObjectsPassesContinuationTokenThroughUnchanged() {
+    software.amazon.awssdk.services.s3.S3Client mockAmazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    String continuationToken = "1%2Fencoded+token%3D";
+    Mockito.when(mockAmazonS3.listObjectsV2(Mockito.any(ListObjectsV2Request.class)))
+        .thenReturn(
+            ListObjectsV2Response.builder()
+                .contents(S3Object.builder().key(key1).build())
+                .isTruncated(true)
+                .nextContinuationToken(continuationToken)
+                .build(),
+            ListObjectsV2Response.builder()
+                .contents(S3Object.builder().key(key2).build())
+                .isTruncated(false)
+                .build());
+    ArgumentCaptor<ListObjectsV2Request> requests =
+        ArgumentCaptor.forClass(ListObjectsV2Request.class);
+
+    List<S3Object> result = new S3Client(mockAmazonS3, false).listObjects(bucket, keyRoot);
+
+    assertThat(result).extracting(S3Object::key).containsExactly(key1, key2);
+    Mockito.verify(mockAmazonS3, Mockito.times(2)).listObjectsV2(requests.capture());
+    assertThat(requests.getAllValues())
+        .extracting(ListObjectsV2Request::encodingTypeAsString)
+        .containsOnly("url");
+    assertThat(requests.getAllValues().get(0).continuationToken()).isNull();
+    assertThat(requests.getAllValues().get(1).continuationToken()).isEqualTo(continuationToken);
   }
 
   @Test

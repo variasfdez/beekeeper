@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+## Changed
+- Migrated S3 access in `beekeeper-cleanup`, `beekeeper-path-cleanup` and `beekeeper-metadata-cleanup` from AWS SDK for Java v1 (end of support) to AWS SDK for Java v2 (`software.amazon.awssdk`). S3 calls use the Apache HttpClient 4 based `apache-client`, and web identity (IRSA) credentials keep working through `software.amazon.awssdk:sts`.
+- Batch deletes still send at most 1000 keys per request and stop at the first request in which S3 reports a failed key, as with v1; no bytes-deleted metric is reported for that path.
+- AWS SDK for Java v1 is still used for SQS in `beekeeper-scheduler-apiary` (through `apiary-receiver-sqs`), for S3 in `beekeeper-vacuum-tool` and in the integration tests, and through `hadoop-aws` in tests.
+
 ## [3.6.4] - 2025-08-04
 ## Fixed
 - Fixed ExpiredMetadataHandler s3 path cleanup issue on retry.

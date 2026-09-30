@@ -46,6 +46,13 @@ class S3UriTest {
   }
 
   @Test
+  void encodedColonIsNotDecoded() {
+    S3Uri uri = new S3Uri("s3://b/hour=00%3A00");
+    assertThat(uri.getBucket()).isEqualTo("b");
+    assertThat(uri.getKey()).isEqualTo("hour=00%3A00");
+  }
+
+  @Test
   void keyWithSentinelSuffix() {
     S3Uri uri = new S3Uri("s3://bucket/table/partition_1_$folder$");
     assertThat(uri.getBucket()).isEqualTo("bucket");

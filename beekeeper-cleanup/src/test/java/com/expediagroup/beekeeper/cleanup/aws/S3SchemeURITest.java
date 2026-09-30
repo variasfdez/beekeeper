@@ -51,6 +51,15 @@ class S3SchemeURITest {
   }
 
   @Test
+  void pathWithEncodedColonIsNotDecoded() {
+    String encodedPath = "s3://b/hour=00%3A00";
+    S3SchemeURI uri = new S3SchemeURI(encodedPath);
+    assertThat(uri.getPath()).isEqualTo(encodedPath);
+    assertThat(uri.getBucket()).isEqualTo("b");
+    assertThat(uri.getKey()).isEqualTo("hour=00%3A00");
+  }
+
+  @Test
   void s3aPath() {
     S3SchemeURI uri = new S3SchemeURI(S3A_PATH);
     assertThat(uri.getPath()).isEqualTo(S3_PATH);
