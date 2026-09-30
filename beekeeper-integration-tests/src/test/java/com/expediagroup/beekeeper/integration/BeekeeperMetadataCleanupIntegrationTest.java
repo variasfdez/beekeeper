@@ -180,8 +180,26 @@ public class BeekeeperMetadataCleanupIntegrationTest extends BeekeeperIntegratio
         .listObjectsV2(BUCKET)
         .getObjectSummaries()
         .forEach(object -> amazonS3.deleteObject(BUCKET, object.getKey()));
+    startMetadataCleanup();
+  }
+
+  private void startMetadataCleanup() {
     executorService.execute(() -> BeekeeperMetadataCleanup.main(new String[] {}));
     await().atMost(Duration.ofMinutes(1)).until(BeekeeperMetadataCleanup::isRunning);
+  }
+
+  // Each scheduler run disables tables before cleaning up, and the first run starts as soon as the app is up.
+  // Metadata inserted between those two steps is marked SKIPPED by cleanup and never disabled, so tests that
+  // expect DISABLED insert their metadata while the app is stopped.
+  private void restartMetadataCleanupAfter(ThrowingRunnable arrange) throws Exception {
+    BeekeeperMetadataCleanup.stop();
+    arrange.run();
+    startMetadataCleanup();
+  }
+
+  @FunctionalInterface
+  private interface ThrowingRunnable {
+    void run() throws Exception;
   }
 
   @AfterEach
@@ -290,9 +308,11 @@ public class BeekeeperMetadataCleanupIntegrationTest extends BeekeeperIntegratio
   }
 
   @Test
-  public void disableTableWhichWasDropped() throws SQLException {
-    amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, TABLE_DATA);
-    insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
+  public void disableTableWhichWasDropped() throws Exception {
+    restartMetadataCleanupAfter(() -> {
+      amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, TABLE_DATA);
+      insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
+    });
     await()
         .atMost(5, TimeUnit.MINUTES)
         .until(() -> getExpiredMetadata().get(0).getHousekeepingStatus() == DISABLED);
@@ -301,11 +321,13 @@ public class BeekeeperMetadataCleanupIntegrationTest extends BeekeeperIntegratio
   }
 
   @Test
-  public void disableTableWithNoPartitions() throws TException, SQLException {
-    hiveTestUtils.createTable(PARTITIONED_TABLE_PATH, TABLE_NAME_VALUE, true, false);
+  public void disableTableWithNoPartitions() throws Exception {
+    restartMetadataCleanupAfter(() -> {
+      hiveTestUtils.createTable(PARTITIONED_TABLE_PATH, TABLE_NAME_VALUE, true, false);
 
-    amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, TABLE_DATA);
-    insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
+      amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, TABLE_DATA);
+      insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
+    });
     await()
         .atMost(TIMEOUT, TimeUnit.SECONDS)
         .until(() -> getExpiredMetadata().get(0).getHousekeepingStatus() == DISABLED);
@@ -316,14 +338,16 @@ public class BeekeeperMetadataCleanupIntegrationTest extends BeekeeperIntegratio
 
   @Test
   public void disablePartitionedTable() throws Exception {
-    Table table = hiveTestUtils.createTable(PARTITIONED_TABLE_PATH, TABLE_NAME_VALUE, true, false);
-    hiveTestUtils.addPartitionsToTable(PARTITION_ROOT_PATH, table, PARTITION_VALUES);
+    restartMetadataCleanupAfter(() -> {
+      Table table = hiveTestUtils.createTable(PARTITIONED_TABLE_PATH, TABLE_NAME_VALUE, true, false);
+      hiveTestUtils.addPartitionsToTable(PARTITION_ROOT_PATH, table, PARTITION_VALUES);
 
-    amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, "");
-    amazonS3.putObject(BUCKET, PARTITIONED_OBJECT_KEY, TABLE_DATA);
+      amazonS3.putObject(BUCKET, PARTITIONED_TABLE_OBJECT_KEY, "");
+      amazonS3.putObject(BUCKET, PARTITIONED_OBJECT_KEY, TABLE_DATA);
 
-    insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
-    insertExpiredMetadata(PARTITION_PATH, PARTITION_NAME);
+      insertExpiredMetadata(PARTITIONED_TABLE_PATH, null);
+      insertExpiredMetadata(PARTITION_PATH, PARTITION_NAME);
+    });
     await()
         .atMost(TIMEOUT, TimeUnit.SECONDS)
         .until(() -> getExpiredMetadata().get(0).getHousekeepingStatus() == DISABLED);
