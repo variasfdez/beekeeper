@@ -57,6 +57,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
@@ -399,17 +400,20 @@ class S3PathCleanerTest {
   }
 
   @Test
-  void reportBytesDeletedWhenDirectoryDeletionPartiallyFails() {
+  void noBytesDeletedMetricWhenDirectoryDeletionPartiallyFails() {
     software.amazon.awssdk.services.s3.S3Client mockAmazonS3 =
         mock(software.amazon.awssdk.services.s3.S3Client.class);
     S3Client mockS3Client = new S3Client(mockAmazonS3, false);
-    mockOneOutOfTwoObjectsDeleted(mockAmazonS3);
+    mockOneOutOfTwoObjectsFailingToDelete(mockAmazonS3);
     s3PathCleaner = new S3PathCleaner(mockS3Client, s3SentinelFilesCleaner, bytesDeletedReporter);
-    assertThatExceptionOfType(BeekeeperException.class)
+    assertThatExceptionOfType(S3Exception.class)
         .isThrownBy(() -> s3PathCleaner.cleanupPath(housekeepingPath))
-        .withMessage(format("Not all files could be deleted at path \"%s/%s\"; deleted 1/2 objects. "
-            + "Objects not deleted: 'table/id1/partition_1/file2'.", bucket, keyRootAsDirectory));
-    verify(bytesDeletedReporter).reportTaggable(100L, housekeepingPath, FileSystemType.S3);
+        .withMessage(
+            format(
+                "Failed to delete objects from bucket \"%s\": "
+                    + "'table/id1/partition_1/file2' (AccessDenied: Access Denied)",
+                bucket));
+    verifyNoInteractions(bytesDeletedReporter);
   }
 
   @Test
@@ -421,7 +425,7 @@ class S3PathCleanerTest {
         .withMessage(format("'%s' is not an S3 path.", path));
   }
 
-  private void mockOneOutOfTwoObjectsDeleted(
+  private void mockOneOutOfTwoObjectsFailingToDelete(
       software.amazon.awssdk.services.s3.S3Client mockAmazonS3) {
     // the path is a directory: a HEAD on it returns 404
     when(mockAmazonS3.headObject(any(HeadObjectRequest.class)))
@@ -435,8 +439,11 @@ class S3PathCleanerTest {
             .build();
     when(mockAmazonS3.listObjectsV2(any(ListObjectsV2Request.class)))
         .thenReturn(listObjectsV2Response);
+    // as real S3 does, the response reports the key it could not delete in its errors
     DeletedObject deletedObject = DeletedObject.builder().key(key1).build();
+    S3Error error =
+        S3Error.builder().key(key2).code("AccessDenied").message("Access Denied").build();
     when(mockAmazonS3.deleteObjects(any(DeleteObjectsRequest.class)))
-        .thenReturn(DeleteObjectsResponse.builder().deleted(deletedObject).build());
+        .thenReturn(DeleteObjectsResponse.builder().deleted(deletedObject).errors(error).build());
   }
 }

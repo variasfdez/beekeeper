@@ -15,6 +15,8 @@
  */
 package com.expediagroup.beekeeper.cleanup.aws;
 
+import static java.lang.String.format;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
@@ -97,7 +100,9 @@ public class S3Client {
                 .delete(
                     Delete.builder().objects(objectIdentifiers(keys, indexStart, indexEnd)).build())
                 .build();
-        deletedObjects.addAll(amazonS3.deleteObjects(deleteObjectsRequest).deleted());
+        DeleteObjectsResponse deleteObjectsResponse = amazonS3.deleteObjects(deleteObjectsRequest);
+        throwIfAnyDeletionFailed(bucket, deleteObjectsResponse);
+        deletedObjects.addAll(deleteObjectsResponse.deleted());
       }
       log.info("Successfully deleted {} objects", keys.size());
       return deletedObjects.stream().map(DeletedObject::key).collect(Collectors.toList());
@@ -142,6 +147,20 @@ public class S3Client {
       }
       return true;
     }
+  }
+
+  // v1 threw MultiObjectDeleteException when any key failed; v2 returns the failures instead
+  private void throwIfAnyDeletionFailed(String bucket, DeleteObjectsResponse response) {
+    if (response.errors().isEmpty()) {
+      return;
+    }
+    String failedDeletions =
+        response.errors().stream()
+            .map(error -> format("'%s' (%s: %s)", error.key(), error.code(), error.message()))
+            .collect(Collectors.joining(", "));
+    throw S3Exception.builder()
+        .message(format("Failed to delete objects from bucket \"%s\": %s", bucket, failedDeletions))
+        .build();
   }
 
   private List<ObjectIdentifier> objectIdentifiers(

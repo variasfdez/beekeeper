@@ -16,6 +16,7 @@
 package com.expediagroup.beekeeper.cleanup.aws;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.testcontainers.containers.localstack.LocalStackContainer.Service.S3;
 
@@ -43,12 +44,14 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
@@ -244,6 +247,31 @@ class S3ClientTest {
     List<S3Object> result = s3Client.listObjects(bucket, keyRoot);
 
     assertThat(result.size()).isEqualTo(s3BatchSize + extraKeys);
+  }
+
+  @Test
+  void deleteObjectsStopsAtFirstBatchWithErrors() {
+    software.amazon.awssdk.services.s3.S3Client mockAmazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    int s3BatchSize = 1000;
+    List<String> keys = new ArrayList<>();
+    for (int i = 1; i <= s3BatchSize + 1; i++) {
+      keys.add(keyRoot + "/file" + i);
+    }
+    S3Error error =
+        S3Error.builder().key(keys.get(0)).code("AccessDenied").message("Access Denied").build();
+    Mockito.when(mockAmazonS3.deleteObjects(Mockito.any(DeleteObjectsRequest.class)))
+        .thenReturn(DeleteObjectsResponse.builder().errors(error).build());
+    S3Client s3ClientWithMock = new S3Client(mockAmazonS3, false);
+
+    assertThatExceptionOfType(S3Exception.class)
+        .isThrownBy(() -> s3ClientWithMock.deleteObjects(bucket, keys))
+        .withMessage(
+            "Failed to delete objects from bucket \"bucket\": "
+                + "'table/partition_1/file1' (AccessDenied: Access Denied)");
+    Mockito.verify(mockAmazonS3, Mockito.times(1))
+        .deleteObjects(Mockito.any(DeleteObjectsRequest.class));
+    verifyNoMoreInteractions(mockAmazonS3);
   }
 
   @Test
