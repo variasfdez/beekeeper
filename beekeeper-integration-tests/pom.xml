@@ -107,6 +107,12 @@
 
     <!-- test -->
     <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-s3</artifactId>
+      <version>${aws-java-sdk.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>com.expediagroup</groupId>
       <artifactId>beekeeper-api</artifactId>
       <version>${project.version}</version>

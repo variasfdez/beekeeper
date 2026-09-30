@@ -36,6 +36,7 @@ import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.putObject;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Rule;
@@ -125,6 +126,25 @@ class S3PathCleanerTest {
     assertThat(doesObjectExist(amazonS3, bucket, key1)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, key2)).isFalse();
     verify(bytesDeletedReporter).reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
+  }
+
+  @Test
+  void directoryWithXmlInvalidControlCharacterAcrossPagesFailsLoudly() {
+    List<String> keys = new ArrayList<>();
+    for (int i = 1; i <= 1100; i++) {
+      keys.add(keyRoot + "/file" + i);
+    }
+    List<String> controlCharacterKeys =
+        List.of(keyRoot + "/a\u0001file", keyRoot + "/z\u0001file");
+    keys.addAll(controlCharacterKeys);
+    keys.parallelStream().forEach(key -> putObject(amazonS3, bucket, key, content));
+    try {
+      assertThatExceptionOfType(S3Exception.class)
+          .isThrownBy(() -> s3PathCleaner.cleanupPath(housekeepingPath));
+      verifyNoInteractions(bytesDeletedReporter);
+    } finally {
+      controlCharacterKeys.forEach(key -> amazonS3.deleteObject(b -> b.bucket(bucket).key(key)));
+    }
   }
 
   @Test

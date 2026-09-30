@@ -178,6 +178,33 @@ class S3ClientTest {
   }
 
   @Test
+  void listObjectsWithXmlInvalidControlCharacterAcrossPages() {
+    List<String> keys = new ArrayList<>();
+    for (int i = 1; i <= 1100; i++) {
+      keys.add(keyRoot + "/file" + i);
+    }
+    List<String> controlCharacterKeys =
+        List.of(
+            keyRoot + "/a\u0001file",
+            keyRoot + "/z\u0001file",
+            keyRoot + "/z\u0001%3A%2B+file");
+    keys.addAll(controlCharacterKeys);
+    keys.parallelStream().forEach(key -> putObject(amazonS3, bucket, key, content));
+    try {
+      List<String> result =
+          s3Client.listObjects(bucket, keyRoot).stream()
+              .map(S3Object::key)
+              .collect(Collectors.toList());
+
+      assertThat(result).containsExactlyInAnyOrderElementsOf(keys);
+      assertThatExceptionOfType(S3Exception.class)
+          .isThrownBy(() -> s3Client.deleteObjects(bucket, controlCharacterKeys));
+    } finally {
+      controlCharacterKeys.forEach(key -> amazonS3.deleteObject(b -> b.bucket(bucket).key(key)));
+    }
+  }
+
+  @Test
   void listBatchObjects() {
     int s3BatchSize = 1000;
     int extraKeys = 100;

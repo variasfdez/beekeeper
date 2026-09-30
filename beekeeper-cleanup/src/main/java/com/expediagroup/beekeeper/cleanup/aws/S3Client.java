@@ -30,6 +30,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
+import software.amazon.awssdk.services.s3.model.EncodingType;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
@@ -67,6 +68,7 @@ public class S3Client {
       ListObjectsV2Request request = ListObjectsV2Request.builder()
           .bucket(bucket)
           .prefix(key)
+          .encodingType(EncodingType.URL)
           .continuationToken(continuationToken)
           .build();
       response = s3.listObjectsV2(request);

@@ -29,6 +29,7 @@ import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.EncodingType;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
@@ -94,8 +95,18 @@ final class S3TestUtils {
     }
   }
 
-  /** Returns the first page (up to 1000 objects) under {@code prefix}. */
-  static List<S3Object> listObjects(software.amazon.awssdk.services.s3.S3Client s3, String bucket, String prefix) {
-    return s3.listObjectsV2(ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build()).contents();
+  /**
+   * Returns the first page (up to 1000 objects) under {@code prefix}. URL encoding is requested so
+   * keys containing XML-invalid characters can be listed; the SDK decodes the returned keys.
+   */
+  static List<S3Object> listObjects(
+      software.amazon.awssdk.services.s3.S3Client s3, String bucket, String prefix) {
+    return s3.listObjectsV2(
+            ListObjectsV2Request.builder()
+                .bucket(bucket)
+                .prefix(prefix)
+                .encodingType(EncodingType.URL)
+                .build())
+        .contents();
   }
 }
