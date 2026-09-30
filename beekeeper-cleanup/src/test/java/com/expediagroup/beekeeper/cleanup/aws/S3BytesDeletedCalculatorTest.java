@@ -30,8 +30,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 @ExtendWith(MockitoExtension.class)
 class S3BytesDeletedCalculatorTest {
@@ -41,7 +41,7 @@ class S3BytesDeletedCalculatorTest {
   private String key1 = "db/table/id/partition1/file1";
   private String key2 = "db/table/id/partition1/file2";
   private String key3 = "db/table/id/partition1/file3";
-  private ObjectMetadata objectMetadata = new ObjectMetadata();
+  private HeadObjectResponse objectMetadata;
   private @Mock S3Client s3Client;
   private S3BytesDeletedCalculator s3BytesDeletedCalculator;
 
@@ -52,7 +52,7 @@ class S3BytesDeletedCalculatorTest {
 
   @Test
   void typicalKeySuccessfullyDeleted() {
-    objectMetadata.setContentLength(contentBytes);
+    objectMetadata = HeadObjectResponse.builder().contentLength(contentBytes).build();
     when(s3Client.getObjectMetadata(any(), any())).thenReturn(objectMetadata);
     s3BytesDeletedCalculator.storeFileSize(bucket, key1);
     s3BytesDeletedCalculator.calculateBytesDeleted(List.of(key1));
@@ -61,7 +61,7 @@ class S3BytesDeletedCalculatorTest {
 
   @Test
   void differentKeyDeleted() {
-    objectMetadata.setContentLength(contentBytes);
+    objectMetadata = HeadObjectResponse.builder().contentLength(contentBytes).build();
     when(s3Client.getObjectMetadata(any(), any())).thenReturn(objectMetadata);
     s3BytesDeletedCalculator.storeFileSize(bucket, key1);
     s3BytesDeletedCalculator.calculateBytesDeleted(List.of(key2));
@@ -70,7 +70,7 @@ class S3BytesDeletedCalculatorTest {
 
   @Test
   void allObjectsSuccessfullyDeleted() {
-    List<S3ObjectSummary> objectSummaries = objectSummaries(key1, key2, key3);
+    List<S3Object> objectSummaries = objectSummaries(key1, key2, key3);
     s3BytesDeletedCalculator.storeFileSizes(objectSummaries);
     s3BytesDeletedCalculator.calculateBytesDeleted(Arrays.asList(key1, key2, key3));
     assertThat(s3BytesDeletedCalculator.getBytesDeleted()).isEqualTo(contentBytes * 3);
@@ -78,7 +78,7 @@ class S3BytesDeletedCalculatorTest {
 
   @Test
   void someObjectsSuccessfullyDeleted() {
-    List<S3ObjectSummary> objectSummaries = objectSummaries(key1, key2, key3);
+    List<S3Object> objectSummaries = objectSummaries(key1, key2, key3);
     s3BytesDeletedCalculator.storeFileSizes(objectSummaries);
     s3BytesDeletedCalculator.calculateBytesDeleted(Arrays.asList(key1));
     assertThat(s3BytesDeletedCalculator.getBytesDeleted()).isEqualTo(contentBytes);
@@ -86,20 +86,15 @@ class S3BytesDeletedCalculatorTest {
 
   @Test
   void noObjectsSuccessfullyDeleted() {
-    List<S3ObjectSummary> objectSummaries = objectSummaries(key1, key2, key3);
+    List<S3Object> objectSummaries = objectSummaries(key1, key2, key3);
     s3BytesDeletedCalculator.storeFileSizes(objectSummaries);
     s3BytesDeletedCalculator.calculateBytesDeleted(Collections.emptyList());
     assertThat(s3BytesDeletedCalculator.getBytesDeleted()).isEqualTo(0);
   }
 
-  private List<S3ObjectSummary> objectSummaries(String... keys) {
+  private List<S3Object> objectSummaries(String... keys) {
     return Arrays.stream(keys)
-      .map(key -> {
-        S3ObjectSummary s3ObjectSummary = new S3ObjectSummary();
-        s3ObjectSummary.setKey(key);
-        s3ObjectSummary.setSize(contentBytes);
-        return s3ObjectSummary;
-      })
-      .collect(Collectors.toList());
+        .map(key -> S3Object.builder().key(key).size(contentBytes).build())
+        .collect(Collectors.toList());
   }
 }

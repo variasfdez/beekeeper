@@ -17,8 +17,6 @@ package com.expediagroup.beekeeper.cleanup.aws;
 
 import static java.lang.String.format;
 
-import com.amazonaws.services.s3.AmazonS3URI;
-
 import com.expediagroup.beekeeper.core.error.BeekeeperException;
 
 public class S3SchemeURI {
@@ -26,14 +24,14 @@ public class S3SchemeURI {
   private static final String S3_SCHEME = "s3://";
   private static final String S3_SCHEME_REGEX = "^s3(a|n):\\/\\/";
 
-  private AmazonS3URI amazonS3URI;
+  private S3Uri amazonS3URI;
 
   public S3SchemeURI(String housekeepingPath) {
     if (!housekeepingPath.startsWith("s3")) {
       throw new BeekeeperException(format("'%s' is not an S3 path.", housekeepingPath));
     }
     String s3Path = housekeepingPath.replaceFirst(S3_SCHEME_REGEX, S3_SCHEME);
-    this.amazonS3URI = new AmazonS3URI(s3Path);
+    this.amazonS3URI = new S3Uri(s3Path);
   }
 
   public String getPath() {
