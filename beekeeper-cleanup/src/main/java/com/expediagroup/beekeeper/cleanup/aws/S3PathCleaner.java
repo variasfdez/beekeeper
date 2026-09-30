@@ -1,16 +1,14 @@
 /**
  * Copyright (C) 2019-2022 Expedia, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
  * limitations under the License.
  */
 package com.expediagroup.beekeeper.cleanup.aws;
@@ -43,7 +41,9 @@ public class S3PathCleaner implements PathCleaner {
   private final SentinelFilesCleaner sentinelFilesCleaner;
   private final BytesDeletedReporter bytesDeletedReporter;
 
-  public S3PathCleaner(S3Client s3Client, SentinelFilesCleaner sentinelFilesCleaner,
+  public S3PathCleaner(
+      S3Client s3Client,
+      SentinelFilesCleaner sentinelFilesCleaner,
       BytesDeletedReporter bytesDeletedReporter) {
     this.s3Client = s3Client;
     this.sentinelFilesCleaner = sentinelFilesCleaner;
@@ -73,37 +73,38 @@ public class S3PathCleaner implements PathCleaner {
     }
   }
 
-  private void deleteFile(String bucket, String key, S3BytesDeletedCalculator bytesDeletedCalculator) {
+  private void deleteFile(
+      String bucket, String key, S3BytesDeletedCalculator bytesDeletedCalculator) {
     bytesDeletedCalculator.storeFileSize(bucket, key);
     s3Client.deleteObject(bucket, key);
     bytesDeletedCalculator.calculateBytesDeleted(List.of(key));
   }
 
-  private void deleteFilesInDirectory(String bucket, String key, S3BytesDeletedCalculator bytesDeletedCalculator) {
+  private void deleteFilesInDirectory(
+      String bucket, String key, S3BytesDeletedCalculator bytesDeletedCalculator) {
     if (!key.endsWith("/")) {
       key += "/";
     }
     List<S3Object> objects = s3Client.listObjects(bucket, key);
     bytesDeletedCalculator.storeFileSizes(objects);
-    List<String> keys = objects.stream()
-        .map(S3Object::key)
-        .collect(Collectors.toList());
+    List<String> keys = objects.stream().map(S3Object::key).collect(Collectors.toList());
     List<String> deletedKeys = s3Client.deleteObjects(bucket, keys);
-    bytesDeletedCalculator.calculateBytesDeleted(deletedKeys);
     int totalFiles = keys.size();
     int successfulDeletes = deletedKeys.size();
     if (successfulDeletes != totalFiles) {
       keys.removeAll(deletedKeys);
-      String failedDeletions = keys.stream()
-          .map(k -> format("'%s'", k))
-          .collect(Collectors.joining(", "));
+      String failedDeletions =
+          keys.stream().map(k -> format("'%s'", k)).collect(Collectors.joining(", "));
       throw new BeekeeperException(
-          format("Not all files could be deleted at path \"%s/%s\"; deleted %s/%s objects. Objects not deleted: %s.",
+          format(
+              "Not all files could be deleted at path \"%s/%s\"; deleted %s/%s objects. Objects not deleted: %s.",
               bucket, key, successfulDeletes, totalFiles, failedDeletions));
     }
+    bytesDeletedCalculator.calculateBytesDeleted(deletedKeys);
   }
 
-  private void deleteSentinelFiles(S3SchemeURI s3SchemeURI, String key, String bucket, String tableName) {
+  private void deleteSentinelFiles(
+      S3SchemeURI s3SchemeURI, String key, String bucket, String tableName) {
     try {
       String path = s3SchemeURI.getPath();
       if (path.endsWith("/")) {
@@ -120,7 +121,8 @@ public class S3PathCleaner implements PathCleaner {
     }
   }
 
-  private void deleteParentSentinelFiles(String bucket, String key, String absolutePath, String tableName) {
+  private void deleteParentSentinelFiles(
+      String bucket, String key, String absolutePath, String tableName) {
     String parentPath = absolutePath.substring(0, absolutePath.lastIndexOf("/"));
     String parentKey = key.substring(0, key.lastIndexOf("/"));
 
@@ -136,6 +138,8 @@ public class S3PathCleaner implements PathCleaner {
   // stop deleting if the path doesn't contain the table name or we got to the table directory
   private boolean pathHasValidTableName(String parent, String tableName) {
     String tableDirectory = "/" + tableName + "/";
-    return !Strings.isNullOrEmpty(tableName) && parent.contains(tableDirectory) && !parent.endsWith("/" + tableName);
+    return !Strings.isNullOrEmpty(tableName)
+        && parent.contains(tableDirectory)
+        && !parent.endsWith("/" + tableName);
   }
 }

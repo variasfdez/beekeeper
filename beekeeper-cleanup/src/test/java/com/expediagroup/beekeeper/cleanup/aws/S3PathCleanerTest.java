@@ -1,16 +1,14 @@
 /**
  * Copyright (C) 2019-2026 Expedia, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
  * limitations under the License.
  */
 package com.expediagroup.beekeeper.cleanup.aws;
@@ -26,6 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
 import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.LOCALSTACK_IMAGE;
 import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createEmptyBucket;
 import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createS3Client;
@@ -47,7 +46,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
-
 
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
@@ -89,8 +87,8 @@ class S3PathCleanerTest {
   private S3PathCleaner s3PathCleaner;
 
   @Rule
-  public static LocalStackContainer awsContainer = new LocalStackContainer(LOCALSTACK_IMAGE)
-      .withServices(LocalStackContainer.Service.S3);
+  public static LocalStackContainer awsContainer =
+      new LocalStackContainer(LOCALSTACK_IMAGE).withServices(LocalStackContainer.Service.S3);
 
   static {
     awsContainer.start();
@@ -106,14 +104,14 @@ class S3PathCleanerTest {
     s3PathCleaner = new S3PathCleaner(s3Client, s3SentinelFilesCleaner, bytesDeletedReporter);
     String tableName = "table";
     String databaseName = "database";
-    housekeepingPath = HousekeepingPath
-        .builder()
-        .path(absolutePath)
-        .tableName(tableName)
-        .databaseName(databaseName)
-        .creationTimestamp(LocalDateTime.now())
-        .cleanupDelay(PeriodDuration.of(Duration.ofDays(1)))
-        .build();
+    housekeepingPath =
+        HousekeepingPath.builder()
+            .path(absolutePath)
+            .tableName(tableName)
+            .databaseName(databaseName)
+            .creationTimestamp(LocalDateTime.now())
+            .cleanupDelay(PeriodDuration.of(Duration.ofDays(1)))
+            .build();
   }
 
   @Test
@@ -125,7 +123,8 @@ class S3PathCleanerTest {
 
     assertThat(doesObjectExist(amazonS3, bucket, key1)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, key2)).isFalse();
-    verify(bytesDeletedReporter).reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
+    verify(bytesDeletedReporter)
+        .reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
   }
 
   @Test
@@ -134,8 +133,7 @@ class S3PathCleanerTest {
     for (int i = 1; i <= 1100; i++) {
       keys.add(keyRoot + "/file" + i);
     }
-    List<String> controlCharacterKeys =
-        List.of(keyRoot + "/a\u0001file", keyRoot + "/z\u0001file");
+    List<String> controlCharacterKeys = List.of(keyRoot + "/a\u0001file", keyRoot + "/z\u0001file");
     keys.addAll(controlCharacterKeys);
     keys.parallelStream().forEach(key -> putObject(amazonS3, bucket, key, content));
     try {
@@ -170,7 +168,8 @@ class S3PathCleanerTest {
 
     assertThat(doesObjectExist(amazonS3, bucket, key1)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, key2)).isFalse();
-    verify(bytesDeletedReporter).reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
+    verify(bytesDeletedReporter)
+        .reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
   }
 
   @Test
@@ -183,7 +182,8 @@ class S3PathCleanerTest {
     s3PathCleaner.cleanupPath(housekeepingPath);
     assertThat(doesObjectExist(amazonS3, bucket, key1)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, key2)).isTrue();
-    verify(bytesDeletedReporter).reportTaggable(content.getBytes().length, housekeepingPath, FileSystemType.S3);
+    verify(bytesDeletedReporter)
+        .reportTaggable(content.getBytes().length, housekeepingPath, FileSystemType.S3);
   }
 
   @Test
@@ -197,7 +197,8 @@ class S3PathCleanerTest {
     assertThat(doesObjectExist(amazonS3, bucket, key1)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, key2)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
-    verify(bytesDeletedReporter).reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
+    verify(bytesDeletedReporter)
+        .reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
   }
 
   @Test
@@ -260,7 +261,8 @@ class S3PathCleanerTest {
     assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, parentSentinelFile)).isFalse();
     assertThat(doesObjectExist(amazonS3, bucket, tableSentinelFile)).isFalse();
-    verify(bytesDeletedReporter).reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
+    verify(bytesDeletedReporter)
+        .reportTaggable(content.getBytes().length * 2, housekeepingPath, FileSystemType.S3);
   }
 
   @Test
@@ -271,7 +273,9 @@ class S3PathCleanerTest {
   @Test
   void sentinelFilesCleanerThrowsException() {
     S3SentinelFilesCleaner s3SentinelFilesCleaner = mock(S3SentinelFilesCleaner.class);
-    doThrow(IllegalArgumentException.class).when(s3SentinelFilesCleaner).deleteSentinelFiles(absolutePath);
+    doThrow(IllegalArgumentException.class)
+        .when(s3SentinelFilesCleaner)
+        .deleteSentinelFiles(absolutePath);
 
     putObject(amazonS3, bucket, key1, content);
 
@@ -364,7 +368,7 @@ class S3PathCleanerTest {
   }
 
   @Test
-  void reportBytesDeletedWhenDirectoryDeletionPartiallyFails() {
+  void noBytesDeletedReportedWhenDirectoryDeletionPartiallyFails() {
     software.amazon.awssdk.services.s3.S3Client mockAmazonS3 =
         mock(software.amazon.awssdk.services.s3.S3Client.class);
     S3Client mockS3Client = new S3Client(mockAmazonS3, false);
@@ -372,9 +376,51 @@ class S3PathCleanerTest {
     s3PathCleaner = new S3PathCleaner(mockS3Client, s3SentinelFilesCleaner, bytesDeletedReporter);
     assertThatExceptionOfType(BeekeeperException.class)
         .isThrownBy(() -> s3PathCleaner.cleanupPath(housekeepingPath))
-        .withMessage(format("Not all files could be deleted at path \"%s/%s\"; deleted 1/2 objects. "
-            + "Objects not deleted: 'table/id1/partition_1/file2'.", bucket, keyRootAsDirectory));
-    verify(bytesDeletedReporter).reportTaggable(100L, housekeepingPath, FileSystemType.S3);
+        .withMessage(
+            format(
+                "Not all files could be deleted at path \"%s/%s\"; deleted 1/2 objects. "
+                    + "Objects not deleted: 'table/id1/partition_1/file2'.",
+                bucket, keyRootAsDirectory));
+    verifyNoInteractions(bytesDeletedReporter);
+  }
+
+  @Test
+  void noBytesDeletedReportedWhenLaterDeleteChunkFails() {
+    software.amazon.awssdk.services.s3.S3Client mockAmazonS3 =
+        mock(software.amazon.awssdk.services.s3.S3Client.class);
+    S3Client mockS3Client = new S3Client(mockAmazonS3, false);
+    List<S3Object> objects = new ArrayList<>();
+    List<DeletedObject> firstChunkDeleted = new ArrayList<>();
+    for (int i = 0; i < 1001; i++) {
+      String objectKey = keyRootAsDirectory + "file" + i;
+      objects.add(S3Object.builder().key(objectKey).size(10L).build());
+      if (i < 1000) {
+        firstChunkDeleted.add(DeletedObject.builder().key(objectKey).build());
+      }
+    }
+    String lastKey = keyRootAsDirectory + "file1000";
+    when(mockAmazonS3.headObject(any(HeadObjectRequest.class)))
+        .thenThrow(NoSuchKeyException.builder().statusCode(404).build());
+    when(mockAmazonS3.listObjectsV2(any(ListObjectsV2Request.class)))
+        .thenReturn(ListObjectsV2Response.builder().contents(objects).isTruncated(false).build());
+    when(mockAmazonS3.deleteObjects(any(DeleteObjectsRequest.class)))
+        .thenReturn(DeleteObjectsResponse.builder().deleted(firstChunkDeleted).build())
+        .thenReturn(
+            DeleteObjectsResponse.builder()
+                .errors(
+                    S3Error.builder()
+                        .key(lastKey)
+                        .code("AccessDenied")
+                        .message("Access Denied")
+                        .build())
+                .build());
+    s3PathCleaner = new S3PathCleaner(mockS3Client, s3SentinelFilesCleaner, bytesDeletedReporter);
+
+    assertThatExceptionOfType(BeekeeperException.class)
+        .isThrownBy(() -> s3PathCleaner.cleanupPath(housekeepingPath))
+        .withMessageContaining("deleted 1000/1001 objects")
+        .withMessageEndingWith(format("Objects not deleted: '%s'.", lastKey));
+    verifyNoInteractions(bytesDeletedReporter);
   }
 
   @Test
@@ -402,17 +448,28 @@ class S3PathCleanerTest {
         .withMessage(format("'%s' is not an S3 path.", path));
   }
 
-  private void mockOneOutOfTwoObjectsDeleted(software.amazon.awssdk.services.s3.S3Client mockAmazonS3) {
+  private void mockOneOutOfTwoObjectsDeleted(
+      software.amazon.awssdk.services.s3.S3Client mockAmazonS3) {
     S3Object s3Object = S3Object.builder().key(key1).size(100L).build();
     S3Object s3Object2 = S3Object.builder().key(key2).size(50L).build();
     when(mockAmazonS3.headObject(any(HeadObjectRequest.class)))
         .thenThrow(NoSuchKeyException.builder().statusCode(404).build());
     when(mockAmazonS3.listObjectsV2(any(ListObjectsV2Request.class)))
-        .thenReturn(ListObjectsV2Response.builder().contents(s3Object, s3Object2).isTruncated(false).build());
+        .thenReturn(
+            ListObjectsV2Response.builder()
+                .contents(s3Object, s3Object2)
+                .isTruncated(false)
+                .build());
     when(mockAmazonS3.deleteObjects(any(DeleteObjectsRequest.class)))
-        .thenReturn(DeleteObjectsResponse.builder()
-            .deleted(DeletedObject.builder().key(key1).build())
-            .errors(S3Error.builder().key(key2).code("AccessDenied").message("Access Denied").build())
-            .build());
+        .thenReturn(
+            DeleteObjectsResponse.builder()
+                .deleted(DeletedObject.builder().key(key1).build())
+                .errors(
+                    S3Error.builder()
+                        .key(key2)
+                        .code("AccessDenied")
+                        .message("Access Denied")
+                        .build())
+                .build());
   }
 }
