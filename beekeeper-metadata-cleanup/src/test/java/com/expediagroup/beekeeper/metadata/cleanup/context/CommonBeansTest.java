@@ -33,7 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
-import com.amazonaws.services.s3.AmazonS3;
+import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 
 import com.expediagroup.beekeeper.cleanup.aws.S3Client;
 import com.expediagroup.beekeeper.cleanup.aws.S3PathCleaner;
@@ -134,21 +134,21 @@ public class CommonBeansTest {
 
   @Test
   public void typicalAmazonClient() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3();
-    URL url = amazonS3.getUrl(BUCKET, KEY);
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3();
+    URL url = amazonS3.utilities().getUrl(GetUrlRequest.builder().bucket(BUCKET).key(KEY).build());
     assertThat(url.getHost()).isEqualTo(String.join(".", BUCKET, AWS_ENDPOINT));
   }
 
   @Test
   public void endpointConfiguredAmazonClient() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3Test();
-    URL url = amazonS3.getUrl(BUCKET, KEY);
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3Test();
+    URL url = amazonS3.utilities().getUrl(GetUrlRequest.builder().bucket(BUCKET).key(KEY).build());
     assertThat(url.getHost()).isEqualTo(String.join(".", BUCKET, ENDPOINT));
   }
 
   @Test
   public void verifyS3Client() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3Test();
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3Test();
     S3Client s3Client = new S3Client(amazonS3, false);
     S3Client beansS3Client = commonBeans.s3Client(amazonS3, false);
     assertThat(s3Client).isEqualToComparingFieldByField(beansS3Client);

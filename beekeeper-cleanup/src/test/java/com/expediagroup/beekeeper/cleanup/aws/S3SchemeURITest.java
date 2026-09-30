@@ -51,6 +51,32 @@ class S3SchemeURITest {
   }
 
   @Test
+  void pathWithPercentEncodedCharactersIsNotDecoded() {
+    String key = KEY + "/hour=2020-01-01 00%3A00%3A00/a%20b+c";
+    String path = "s3://" + BUCKET + "/" + key;
+    S3SchemeURI uri = new S3SchemeURI(path);
+    assertThat(uri.getPath()).isEqualTo(path);
+    assertThat(uri.getBucket()).isEqualTo(BUCKET);
+    assertThat(uri.getKey()).isEqualTo(key);
+  }
+
+  @Test
+  void pathWithSpecialCharacters() {
+    String key = KEY + "/a#b?c=d&e;f[g]{h}|i^j`k\\l\"m<n>o'p~q!r@s$t*u(v)w,x";
+    S3SchemeURI uri = new S3SchemeURI("s3a://" + BUCKET + "/" + key);
+    assertThat(uri.getBucket()).isEqualTo(BUCKET);
+    assertThat(uri.getKey()).isEqualTo(key);
+  }
+
+  @Test
+  void bucketOnly() {
+    S3SchemeURI uri = new S3SchemeURI("s3://" + BUCKET);
+    assertThat(uri.getBucket()).isEqualTo(BUCKET);
+    assertThat(uri.getKey()).isNull();
+    assertThat(new S3SchemeURI("s3://" + BUCKET + "/").getKey()).isNull();
+  }
+
+  @Test
   void s3aPath() {
     S3SchemeURI uri = new S3SchemeURI(S3A_PATH);
     assertThat(uri.getPath()).isEqualTo(S3_PATH);

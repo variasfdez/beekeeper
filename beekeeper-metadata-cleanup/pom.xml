@@ -24,6 +24,12 @@
       <version>${aws-java-sdk.version}</version>
     </dependency>
     <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>sts</artifactId>
+      <version>${aws-java-sdk-v2.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>com.expediagroup</groupId>
       <artifactId>beekeeper-cleanup</artifactId>
       <version>${project.version}</version>

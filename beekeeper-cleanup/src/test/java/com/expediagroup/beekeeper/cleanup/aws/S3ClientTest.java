@@ -16,15 +16,23 @@
 package com.expediagroup.beekeeper.cleanup.aws;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.testcontainers.containers.localstack.LocalStackContainer.Service.S3;
+import static org.mockito.Mockito.when;
+
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.LOCALSTACK_IMAGE;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createEmptyBucket;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createS3Client;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.putObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.apache.hadoop.fs.s3a.BasicAWSCredentialsProvider;
 import org.junit.Rule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,16 +41,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
-import com.amazonaws.client.builder.AwsClientBuilder;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.ListObjectsV2Request;
-import com.amazonaws.services.s3.model.ListObjectsV2Result;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.DeletedObject;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.S3Error;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 @Testcontainers
 class S3ClientTest {
@@ -55,114 +63,84 @@ class S3ClientTest {
 
   private S3Client s3Client;
   private S3Client s3ClientDryRun;
-  private AmazonS3 amazonS3;
+  private software.amazon.awssdk.services.s3.S3Client amazonS3;
 
   @Rule
-  public static LocalStackContainer awsContainer = new LocalStackContainer(
-      DockerImageName.parse("localstack/localstack:0.14.2")).withServices(S3);
+  public static LocalStackContainer awsContainer = new LocalStackContainer(LOCALSTACK_IMAGE)
+      .withServices(LocalStackContainer.Service.S3);
 
   static {
     awsContainer.start();
   }
 
-  public static String S3_ENDPOINT = awsContainer.getEndpointOverride(S3).toString();
-
   @BeforeEach
   void setUp() {
-    amazonS3 = AmazonS3ClientBuilder
-        .standard()
-        .withCredentials(new BasicAWSCredentialsProvider("accesskey", "secretkey"))
-        .withEndpointConfiguration(
-            new AwsClientBuilder.EndpointConfiguration(S3_ENDPOINT, "region")).build();
-    amazonS3.createBucket(bucket);
-    emptyBucket(bucket);
-    assertThat(amazonS3.listObjectsV2(bucket).getObjectSummaries()).isEmpty();
+    amazonS3 = createS3Client(awsContainer);
+    createEmptyBucket(amazonS3, bucket);
+    assertThat(S3TestUtils.listObjects(amazonS3, bucket, "")).isEmpty();
     s3Client = new S3Client(amazonS3, false);
     s3ClientDryRun = new S3Client(amazonS3, true);
   }
 
-  private void emptyBucket(String bucket) {
-    ListObjectsV2Result listObjectsV2Result;
-    String continuationToken = null;
-    do {
-      ListObjectsV2Request request = new ListObjectsV2Request()
-          .withBucketName(bucket)
-          .withContinuationToken(continuationToken);
-      listObjectsV2Result = amazonS3.listObjectsV2(request);
-      DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket);
-      List<String> keys = listObjectsV2Result
-          .getObjectSummaries()
-          .stream()
-          .map(S3ObjectSummary::getKey)
-          .collect(Collectors.toList());
-      if (keys.size() > 0) {
-        amazonS3.deleteObjects(deleteObjectsRequest.withKeys(keys.toArray(new String[] {})));
-      }
-      continuationToken = listObjectsV2Result.getNextContinuationToken();
-    } while (listObjectsV2Result.isTruncated());
-  }
-
   @Test
   void deleteObject() {
-    amazonS3.putObject(bucket, key1, content);
+    putObject(amazonS3, bucket, key1, content);
     s3Client.deleteObject(bucket, key1);
-    assertThat(amazonS3.doesObjectExist(bucket, key1)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key1)).isFalse();
   }
 
   @Test
   void deleteObjectWithSpace() {
     String spacedKey = keyRoot + "/ /file";
-    amazonS3.putObject(bucket, spacedKey, content);
+    putObject(amazonS3, bucket, spacedKey, content);
     s3Client.deleteObject(bucket, spacedKey);
-    assertThat(amazonS3.doesObjectExist(bucket, spacedKey)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, spacedKey)).isFalse();
   }
 
   @Test
   void deleteObjectsWithSpace() {
     String spacedKey1 = keyRoot + "/ /file1";
     String spacedKey2 = keyRoot + "/ /file2";
-    amazonS3.putObject(bucket, spacedKey1, content);
-    amazonS3.putObject(bucket, spacedKey2, content);
+    putObject(amazonS3, bucket, spacedKey1, content);
+    putObject(amazonS3, bucket, spacedKey2, content);
     s3Client.deleteObjects(bucket, List.of(spacedKey1, spacedKey2));
-    assertThat(amazonS3.doesObjectExist(bucket, spacedKey1)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, spacedKey2)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, spacedKey1)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, spacedKey2)).isFalse();
   }
 
   @Test
   void deleteObjectDryRun() {
-    amazonS3.putObject(bucket, key1, content);
+    putObject(amazonS3, bucket, key1, content);
     s3ClientDryRun.deleteObject(bucket, key1);
-    assertThat(amazonS3.doesObjectExist(bucket, key1)).isTrue();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key1)).isTrue();
   }
 
   @Test
   void listObjects() {
-    amazonS3.putObject(bucket, key1, content);
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key1, content);
+    putObject(amazonS3, bucket, key2, content);
 
-    List<S3ObjectSummary> result = s3Client.listObjects(bucket, keyRoot);
+    List<S3Object> result = s3Client.listObjects(bucket, keyRoot);
 
     assertThat(result.size()).isEqualTo(2);
-    assertThat(result.get(0).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(0).getKey()).isEqualTo(key1);
-    assertThat(result.get(1).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(1).getKey()).isEqualTo(key2);
+    assertThat(result.get(0).key()).isEqualTo(key1);
+    assertThat(result.get(0).size()).isEqualTo(content.length());
+    assertThat(result.get(1).key()).isEqualTo(key2);
+    assertThat(result.get(1).size()).isEqualTo(content.length());
   }
 
   @Test
   void listObjectsWithSpace() {
     String spacedKey1 = keyRoot + "/ /file1";
     String spacedKey2 = keyRoot + "/ /file2";
-    amazonS3.putObject(bucket, spacedKey1, content);
-    amazonS3.putObject(bucket, spacedKey2, content);
+    putObject(amazonS3, bucket, spacedKey1, content);
+    putObject(amazonS3, bucket, spacedKey2, content);
 
-    List<S3ObjectSummary> result = s3Client.listObjects(bucket, keyRoot);
+    List<S3Object> result = s3Client.listObjects(bucket, keyRoot);
 
     assertThat(result.size()).isEqualTo(2);
-    assertThat(result.get(0).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(0).getKey()).isEqualTo(spacedKey1);
-    assertThat(result.get(1).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(1).getKey()).isEqualTo(spacedKey2);
+    assertThat(result.get(0).key()).isEqualTo(spacedKey1);
+    assertThat(result.get(1).key()).isEqualTo(spacedKey2);
   }
 
   @Test
@@ -170,16 +148,33 @@ class S3ClientTest {
     String spacedKeyRoot = keyRoot + "/ /";
     String spacedKey1 = spacedKeyRoot + "file1";
     String spacedKey2 = spacedKeyRoot + "file2";
-    amazonS3.putObject(bucket, spacedKey1, content);
-    amazonS3.putObject(bucket, spacedKey2, content);
+    putObject(amazonS3, bucket, spacedKey1, content);
+    putObject(amazonS3, bucket, spacedKey2, content);
 
-    List<S3ObjectSummary> result = s3Client.listObjects(bucket, spacedKeyRoot);
+    List<S3Object> result = s3Client.listObjects(bucket, spacedKeyRoot);
 
     assertThat(result.size()).isEqualTo(2);
-    assertThat(result.get(0).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(0).getKey()).isEqualTo(spacedKey1);
-    assertThat(result.get(1).getBucketName()).isEqualTo(bucket);
-    assertThat(result.get(1).getKey()).isEqualTo(spacedKey2);
+    assertThat(result.get(0).key()).isEqualTo(spacedKey1);
+    assertThat(result.get(1).key()).isEqualTo(spacedKey2);
+  }
+
+  @Test
+  void listObjectsReturnsRawKeysWithSpecialCharacters() {
+    String encodedKey = keyRoot + "/hour=2020-01-01 00%3A00%3A00/file";
+    String plusKey = keyRoot + "/a+b/file";
+    String unicodeKey = keyRoot + "/\u00e9t\u00e9/file";
+    putObject(amazonS3, bucket, encodedKey, content);
+    putObject(amazonS3, bucket, plusKey, content);
+    putObject(amazonS3, bucket, unicodeKey, content);
+
+    List<String> result = s3Client.listObjects(bucket, keyRoot)
+        .stream()
+        .map(S3Object::key)
+        .collect(Collectors.toList());
+
+    assertThat(result).containsExactlyInAnyOrder(encodedKey, plusKey, unicodeKey);
+    assertThat(s3Client.deleteObjects(bucket, result)).containsExactlyInAnyOrderElementsOf(result);
+    assertThat(S3TestUtils.listObjects(amazonS3, bucket, keyRoot)).isEmpty();
   }
 
   @Test
@@ -190,25 +185,25 @@ class S3ClientTest {
     for (int i = 1; i <= s3BatchSize + extraKeys; i++) {
       keys.add(keyRoot + "/file" + i);
     }
-    keys.parallelStream().forEach(key -> amazonS3.putObject(bucket, key, content));
+    keys.parallelStream().forEach(key -> putObject(amazonS3, bucket, key, content));
 
-    List<S3ObjectSummary> result = s3Client.listObjects(bucket, keyRoot);
+    List<S3Object> result = s3Client.listObjects(bucket, keyRoot);
 
     assertThat(result.size()).isEqualTo(s3BatchSize + extraKeys);
   }
 
   @Test
   void deleteObjectsInDirectory() {
-    amazonS3.putObject(bucket, key1, content);
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key1, content);
+    putObject(amazonS3, bucket, key2, content);
 
     List<String> result = s3Client.deleteObjects(bucket, List.of(key1, key2));
 
     assertThat(result.size()).isEqualTo(2);
     assertThat(result).contains(key1);
     assertThat(result).contains(key2);
-    assertThat(amazonS3.doesObjectExist(bucket, key1)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, key2)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key1)).isFalse();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key2)).isFalse();
   }
 
   @ParameterizedTest
@@ -219,12 +214,12 @@ class S3ClientTest {
       var key = keyRoot + "/file" + i;
       keys.add(key);
     }
-    keys.parallelStream().forEach(key -> amazonS3.putObject(bucket, key, content));
+    keys.parallelStream().forEach(key -> putObject(amazonS3, bucket, key, content));
 
     List<String> result = s3Client.deleteObjects(bucket, keys);
     assertThat(result.size()).isEqualTo(totalObjects);
 
-    int numberOfObjectsLeft = amazonS3.listObjects(bucket, keyRoot).getObjectSummaries().size();
+    int numberOfObjectsLeft = S3TestUtils.listObjects(amazonS3, bucket, keyRoot).size();
     assertThat(numberOfObjectsLeft).isEqualTo(0);
 
     assertThat(keys).isEqualTo(result);
@@ -232,21 +227,22 @@ class S3ClientTest {
 
   @Test
   void deleteObjectsInDirectoryDryRun() {
-    amazonS3.putObject(bucket, key1, content);
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key1, content);
+    putObject(amazonS3, bucket, key2, content);
 
     List<String> result = s3ClientDryRun.deleteObjects(bucket, List.of(key1, key2));
 
     assertThat(result.size()).isEqualTo(2);
     assertThat(result).contains(key1);
     assertThat(result).contains(key2);
-    assertThat(amazonS3.doesObjectExist(bucket, key1)).isTrue();
-    assertThat(amazonS3.doesObjectExist(bucket, key2)).isTrue();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key1)).isTrue();
+    assertThat(S3TestUtils.doesObjectExist(amazonS3, bucket, key2)).isTrue();
   }
 
   @Test
   void deleteObjectsEmptyRequest() {
-    AmazonS3 amazonS3 = Mockito.mock(AmazonS3.class);
+    software.amazon.awssdk.services.s3.S3Client amazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
     S3Client s3Client = new S3Client(amazonS3, false);
 
     List<String> result = s3Client.deleteObjects(bucket, Collections.emptyList());
@@ -256,8 +252,33 @@ class S3ClientTest {
   }
 
   @Test
+  void deleteObjectsPartialFailureReturnsOnlyDeletedKeysAndStopsSendingChunks() {
+    software.amazon.awssdk.services.s3.S3Client amazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    S3Client s3Client = new S3Client(amazonS3, false);
+    List<String> keys = new ArrayList<>();
+    for (int i = 1; i <= 1500; i++) {
+      keys.add(keyRoot + "/file" + i);
+    }
+    List<DeletedObject> deleted = keys.subList(1, 1000)
+        .stream()
+        .map(key -> DeletedObject.builder().key(key).build())
+        .collect(Collectors.toList());
+    when(amazonS3.deleteObjects(any(DeleteObjectsRequest.class)))
+        .thenReturn(DeleteObjectsResponse.builder()
+            .deleted(deleted)
+            .errors(S3Error.builder().key(keys.get(0)).code("AccessDenied").message("Access Denied").build())
+            .build());
+
+    List<String> result = s3Client.deleteObjects(bucket, keys);
+
+    assertThat(result).containsExactlyElementsOf(keys.subList(1, 1000));
+    verify(amazonS3, times(1)).deleteObjects(any(DeleteObjectsRequest.class));
+  }
+
+  @Test
   void doesObjectExistForFile() {
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key2, content);
     boolean result = s3Client.doesObjectExist(bucket, key2);
     assertThat(result).isTrue();
   }
@@ -265,50 +286,79 @@ class S3ClientTest {
   @Test
   void doesObjectExistForFileWithSpaceInKey() {
     String spacedKey = key2 + "/ /file";
-    amazonS3.putObject(bucket, spacedKey, content);
+    putObject(amazonS3, bucket, spacedKey, content);
     boolean result = s3Client.doesObjectExist(bucket, spacedKey);
     assertThat(result).isTrue();
   }
 
   @Test
   void doesObjectExistForDirectory() {
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key2, content);
     boolean result = s3Client.doesObjectExist(bucket, keyRoot);
     assertThat(result).isFalse();
   }
 
   @Test
   void doesObjectExistForDirectoryWithTrailingSlash() {
-    amazonS3.putObject(bucket, key2, content);
+    putObject(amazonS3, bucket, key2, content);
     boolean result = s3Client.doesObjectExist(bucket, keyRoot + "/");
     assertThat(result).isFalse();
   }
 
   @Test
+  void doesObjectExistIsFalseForNoSuchKeyException() {
+    software.amazon.awssdk.services.s3.S3Client amazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    when(amazonS3.headObject(any(HeadObjectRequest.class)))
+        .thenThrow(NoSuchKeyException.builder().statusCode(404).build());
+    assertThat(new S3Client(amazonS3, false).doesObjectExist(bucket, key1)).isFalse();
+  }
+
+  @Test
+  void doesObjectExistIsFalseFor404S3Exception() {
+    software.amazon.awssdk.services.s3.S3Client amazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    when(amazonS3.headObject(any(HeadObjectRequest.class)))
+        .thenThrow(S3Exception.builder().statusCode(404).build());
+    assertThat(new S3Client(amazonS3, false).doesObjectExist(bucket, key1)).isFalse();
+  }
+
+  @Test
+  void doesObjectExistRethrowsNon404S3Exception() {
+    software.amazon.awssdk.services.s3.S3Client amazonS3 =
+        Mockito.mock(software.amazon.awssdk.services.s3.S3Client.class);
+    S3Exception forbidden = (S3Exception) S3Exception.builder().statusCode(403).build();
+    when(amazonS3.headObject(any(HeadObjectRequest.class))).thenThrow(forbidden);
+    assertThatExceptionOfType(S3Exception.class)
+        .isThrownBy(() -> new S3Client(amazonS3, false).doesObjectExist(bucket, key1))
+        .isSameAs(forbidden);
+  }
+
+  @Test
   void getObjectSize() {
-    amazonS3.putObject(bucket, key2, content);
-    ObjectMetadata result = s3Client.getObjectMetadata(bucket, key2);
-    assertThat(result.getContentLength()).isNotEqualTo(0L);
+    putObject(amazonS3, bucket, key2, content);
+    HeadObjectResponse result = s3Client.getObjectMetadata(bucket, key2);
+    assertThat(result.contentLength()).isNotEqualTo(0L);
   }
 
   @Test
   void getObjectSizeWithSpaceInKey() {
     String spacedKey = key2 + "/ /file";
-    amazonS3.putObject(bucket, spacedKey, content);
-    ObjectMetadata result = s3Client.getObjectMetadata(bucket, spacedKey);
-    assertThat(result.getContentLength()).isNotEqualTo(0L);
+    putObject(amazonS3, bucket, spacedKey, content);
+    HeadObjectResponse result = s3Client.getObjectMetadata(bucket, spacedKey);
+    assertThat(result.contentLength()).isNotEqualTo(0L);
   }
 
   @Test
   void getObjectSizeForEmptyFile() {
-    amazonS3.putObject(bucket, key2, "");
-    ObjectMetadata result = s3Client.getObjectMetadata(bucket, key2);
-    assertThat(result.getContentLength()).isEqualTo(0L);
+    putObject(amazonS3, bucket, key2, "");
+    HeadObjectResponse result = s3Client.getObjectMetadata(bucket, key2);
+    assertThat(result.contentLength()).isEqualTo(0L);
   }
 
   @Test
   void isEmptyForNonEmptyDirectory() {
-    amazonS3.putObject(bucket, key1, content);
+    putObject(amazonS3, bucket, key1, content);
     boolean result = s3Client.isEmpty(bucket, keyRoot, null);
     assertThat(result).isFalse();
   }
@@ -316,7 +366,7 @@ class S3ClientTest {
   @Test
   void isEmptyForNonEmptyDirectoryWithSpacedKey() {
     String spacedKey = key1 + "/ /file";
-    amazonS3.putObject(bucket, spacedKey, content);
+    putObject(amazonS3, bucket, spacedKey, content);
     boolean result = s3Client.isEmpty(bucket, keyRoot, null);
     assertThat(result).isFalse();
   }
@@ -329,7 +379,7 @@ class S3ClientTest {
 
   @Test
   void isEmptyDryRunForNonEmptyDirectoryAndCorrectLeafKey() {
-    amazonS3.putObject(bucket, key1, content);
+    putObject(amazonS3, bucket, key1, content);
     boolean result = s3ClientDryRun.isEmpty(bucket, "table", keyRoot);
     assertThat(result).isTrue();
   }
@@ -342,14 +392,14 @@ class S3ClientTest {
 
   @Test
   void isEmptyDryRunForOtherHighLevelDirectory() {
-    amazonS3.putObject(bucket, "table/partition_2", content);
+    putObject(amazonS3, bucket, "table/partition_2", content);
     boolean result = s3ClientDryRun.isEmpty(bucket, "table", keyRoot);
     assertThat(result).isFalse();
   }
 
   @Test
   void doesObjectExist() {
-    amazonS3.putObject(bucket, key1, content);
+    putObject(amazonS3, bucket, key1, content);
     boolean result = s3Client.doesObjectExist(bucket, key1);
     assertThat(result).isTrue();
   }
@@ -357,7 +407,7 @@ class S3ClientTest {
   @Test
   void doesObjectExistWithSpacedKey() {
     String spacedKey = key1 + "/ /file";
-    amazonS3.putObject(bucket, spacedKey, content);
+    putObject(amazonS3, bucket, spacedKey, content);
     boolean result = s3Client.doesObjectExist(bucket, spacedKey);
     assertThat(result).isTrue();
   }
@@ -375,11 +425,11 @@ class S3ClientTest {
     String sentinel2 = "table/test_$folder$";
     String sentinel3 = "table/test/test_$folder$";
     String sentinel4 = "table/test/test/partition1_$folder$";
-    amazonS3.putObject(bucket, filePath, content);
-    amazonS3.putObject(bucket, sentinel1, "");
-    amazonS3.putObject(bucket, sentinel2, "");
-    amazonS3.putObject(bucket, sentinel3, "");
-    amazonS3.putObject(bucket, sentinel4, "");
+    putObject(amazonS3, bucket, filePath, content);
+    putObject(amazonS3, bucket, sentinel1, "");
+    putObject(amazonS3, bucket, sentinel2, "");
+    putObject(amazonS3, bucket, sentinel3, "");
+    putObject(amazonS3, bucket, sentinel4, "");
 
     assertThat(s3ClientDryRun.isEmpty(bucket, folder3, folder4)).isTrue();
     assertThat(s3ClientDryRun.isEmpty(bucket, folder3, otherPartition)).isFalse();

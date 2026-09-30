@@ -18,9 +18,12 @@ package com.expediagroup.beekeeper.cleanup.aws;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.testcontainers.containers.localstack.LocalStackContainer.Service.S3;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.LOCALSTACK_IMAGE;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createEmptyBucket;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.createS3Client;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.doesObjectExist;
+import static com.expediagroup.beekeeper.cleanup.aws.S3TestUtils.putObject;
 
-import org.apache.hadoop.fs.s3a.BasicAWSCredentialsProvider;
 import org.junit.Rule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,11 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
-import com.amazonaws.client.builder.AwsClientBuilder;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 
 @ExtendWith(MockitoExtension.class)
 @Testcontainers
@@ -44,47 +43,50 @@ class S3SentinelFilesCleanerTest {
   private final String tableName = "table";
 
   private S3SentinelFilesCleaner s3SentinelFilesCleaner;
-  private AmazonS3 amazonS3;
+  private software.amazon.awssdk.services.s3.S3Client amazonS3;
 
   @Rule
-  public static LocalStackContainer awsContainer = new LocalStackContainer(
-      DockerImageName.parse("localstack/localstack:0.14.2")).withServices(S3);
+  public static LocalStackContainer awsContainer = new LocalStackContainer(LOCALSTACK_IMAGE)
+      .withServices(LocalStackContainer.Service.S3);
 
   static {
     awsContainer.start();
   }
 
-  public static String S3_ENDPOINT = awsContainer.getEndpointOverride(S3).toString();
-
   @BeforeEach
   void setUp() {
-    amazonS3 = AmazonS3ClientBuilder
-        .standard()
-        .withCredentials(new BasicAWSCredentialsProvider("accesskey", "secretkey"))
-        .withEndpointConfiguration(
-            new AwsClientBuilder.EndpointConfiguration(S3_ENDPOINT, "region")).build();
-    amazonS3.createBucket(bucket);
-    amazonS3.listObjectsV2(bucket)
-        .getObjectSummaries()
-        .forEach(object -> amazonS3.deleteObject(bucket, object.getKey()));
+    amazonS3 = createS3Client(awsContainer);
+    createEmptyBucket(amazonS3, bucket);
     S3Client s3Client = new S3Client(amazonS3, false);
     s3SentinelFilesCleaner = new S3SentinelFilesCleaner(s3Client);
   }
 
   @Test
   void typical() {
-    amazonS3.putObject(bucket, partition1Sentinel, "");
+    putObject(amazonS3, bucket, partition1Sentinel, "");
     s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partition1Sentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
   }
 
   @Test
   void sentinelFileWithSpaceInKey() {
     String partition1Sentinel = "table/ /partition_1_$folder$";
     String partition1AbsolutePath = "s3://bucket/table/ /partition_1";
-    amazonS3.putObject(bucket, partition1Sentinel, "");
+    putObject(amazonS3, bucket, partition1Sentinel, "");
     s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partition1Sentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
+  }
+
+  @Test
+  void sentinelFileWithPercentEncodedCharactersInKey() {
+    String partition1Sentinel = "table/hour=2020-01-01 00%3A00%3A00_$folder$";
+    String partition1AbsolutePath = "s3://bucket/table/hour=2020-01-01 00%3A00%3A00";
+    String decodedSentinel = "table/hour=2020-01-01 00:00:00_$folder$";
+    putObject(amazonS3, bucket, partition1Sentinel, "");
+    putObject(amazonS3, bucket, decodedSentinel, "");
+    s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath);
+    assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, decodedSentinel)).isTrue();
   }
 
   @Test
@@ -98,24 +100,24 @@ class S3SentinelFilesCleanerTest {
   @Test
   void moreThanOneSentinelFile() {
     String partition11Sentinel = "table/partition_11_$folder$";
-    amazonS3.putObject(bucket, partition11Sentinel, "");
-    amazonS3.putObject(bucket, partition1Sentinel, "");
+    putObject(amazonS3, bucket, partition11Sentinel, "");
+    putObject(amazonS3, bucket, partition1Sentinel, "");
 
     s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partition1Sentinel)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, partition11Sentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partition11Sentinel)).isTrue();
   }
 
   @Test
   void nonEmptySentinelFile() {
-    amazonS3.putObject(bucket, partition1Sentinel, "content");
+    putObject(amazonS3, bucket, partition1Sentinel, "content");
     s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partition1Sentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partition1Sentinel)).isTrue();
   }
 
   @Test
   void sentinelFileDoesntExist() {
-    amazonS3.putObject(bucket, "table/partition_1", "content");
+    putObject(amazonS3, bucket, "table/partition_1", "content");
     assertThatCode(() -> s3SentinelFilesCleaner.deleteSentinelFiles(partition1AbsolutePath)).doesNotThrowAnyException();
   }
 
@@ -126,14 +128,14 @@ class S3SentinelFilesCleanerTest {
     String parentFile = "table/id1/randomFile";
     String partitionAbsolutePath = "s3://bucket/table/id1/partition_1";
 
-    amazonS3.putObject(bucket, partitionSentinel, "");
-    amazonS3.putObject(bucket, partitionParentSentinel, "");
-    amazonS3.putObject(bucket, parentFile, "content");
+    putObject(amazonS3, bucket, partitionSentinel, "");
+    putObject(amazonS3, bucket, partitionParentSentinel, "");
+    putObject(amazonS3, bucket, parentFile, "content");
 
     s3SentinelFilesCleaner.deleteSentinelFiles(partitionAbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partitionSentinel)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, parentFile)).isTrue();
-    assertThat(amazonS3.doesObjectExist(bucket, partitionParentSentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionSentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, parentFile)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionParentSentinel)).isTrue();
   }
 
   @Test
@@ -142,12 +144,12 @@ class S3SentinelFilesCleanerTest {
     String partitionParentSentinel = "randomLocation/id1_$folder$";
     String partitionAbsolutePath = "s3://bucket/randomLocation/id1/partition_1";
 
-    amazonS3.putObject(bucket, partitionSentinel, "");
-    amazonS3.putObject(bucket, partitionParentSentinel, "");
+    putObject(amazonS3, bucket, partitionSentinel, "");
+    putObject(amazonS3, bucket, partitionParentSentinel, "");
 
     s3SentinelFilesCleaner.deleteSentinelFiles(partitionAbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partitionSentinel)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, partitionParentSentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionSentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionParentSentinel)).isTrue();
   }
 
   @Test
@@ -157,12 +159,12 @@ class S3SentinelFilesCleanerTest {
     String partitionParentSentinel = tableTest + "/id1_$folder$";
     String partitionAbsolutePath = "s3://bucket/" + tableTest + "/id1/partition_1";
 
-    amazonS3.putObject(bucket, partitionSentinel, "");
-    amazonS3.putObject(bucket, partitionParentSentinel, "");
+    putObject(amazonS3, bucket, partitionSentinel, "");
+    putObject(amazonS3, bucket, partitionParentSentinel, "");
 
     s3SentinelFilesCleaner.deleteSentinelFiles(partitionAbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partitionSentinel)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, partitionParentSentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionSentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionParentSentinel)).isTrue();
   }
 
   @Test
@@ -172,11 +174,11 @@ class S3SentinelFilesCleanerTest {
     String partitionParentSentinel = testTable + "/id1_$folder$";
     String partitionAbsolutePath = "s3://bucket/" + testTable + "/id1/partition_1";
 
-    amazonS3.putObject(bucket, partitionSentinel, "");
-    amazonS3.putObject(bucket, partitionParentSentinel, "");
+    putObject(amazonS3, bucket, partitionSentinel, "");
+    putObject(amazonS3, bucket, partitionParentSentinel, "");
 
     s3SentinelFilesCleaner.deleteSentinelFiles(partitionAbsolutePath);
-    assertThat(amazonS3.doesObjectExist(bucket, partitionSentinel)).isFalse();
-    assertThat(amazonS3.doesObjectExist(bucket, partitionParentSentinel)).isTrue();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionSentinel)).isFalse();
+    assertThat(doesObjectExist(amazonS3, bucket, partitionParentSentinel)).isTrue();
   }
 }

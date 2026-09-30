@@ -17,8 +17,6 @@ package com.expediagroup.beekeeper.cleanup.aws;
 
 import java.util.Optional;
 
-import com.amazonaws.services.s3.AmazonS3URI;
-
 import com.expediagroup.beekeeper.cleanup.path.SentinelFilesCleaner;
 
 public class S3SentinelFilesCleaner implements SentinelFilesCleaner {
@@ -32,7 +30,7 @@ public class S3SentinelFilesCleaner implements SentinelFilesCleaner {
 
   @Override
   public void deleteSentinelFiles(String absolutePath) {
-    AmazonS3URI s3Path = new AmazonS3URI(absolutePath, true);
+    S3Uri s3Path = S3Uri.parse(absolutePath);
     String bucket = s3Path.getBucket();
     String key = s3Path.getKey();
 
@@ -43,7 +41,8 @@ public class S3SentinelFilesCleaner implements SentinelFilesCleaner {
     String sentinelFile = key + SENTINEL_SUFFIX;
     boolean sentinelExists = s3Client.doesObjectExist(bucket, sentinelFile);
     if (sentinelExists) {
-      boolean sizeIsZero = s3Client.getObjectMetadata(bucket, sentinelFile).getContentLength() == 0L;
+      boolean sizeIsZero =
+          S3BytesDeletedCalculator.contentLength(s3Client.getObjectMetadata(bucket, sentinelFile)) == 0L;
       if (sizeIsZero) {
         return Optional.of(sentinelFile);
       }

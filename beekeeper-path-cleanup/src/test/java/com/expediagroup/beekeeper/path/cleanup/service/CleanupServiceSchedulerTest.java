@@ -34,7 +34,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.context.support.AnnotationConfigContextLoader;
 
-import com.amazonaws.services.s3.AmazonS3;
+import software.amazon.awssdk.services.s3.S3Client;
 
 import com.expediagroup.beekeeper.cleanup.service.CleanupService;
 import com.expediagroup.beekeeper.cleanup.service.CleanupServiceScheduler;
@@ -52,7 +52,7 @@ class CleanupServiceSchedulerTest {
 
   private @Autowired CleanupServiceScheduler cleanupServiceScheduler;
   private @MockBean CleanupService cleanupService;
-  private @MockBean AmazonS3 amazonS3;
+  private @MockBean S3Client amazonS3;
   private @MockBean RepositoryCleanupScheduler repositoryCleanupScheduler;
   private @MockBean DisableTablesService disableTablesService;
 

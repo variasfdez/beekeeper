@@ -28,10 +28,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-
+import com.expediagroup.beekeeper.cleanup.aws.AwsS3ClientFactory;
 import com.expediagroup.beekeeper.cleanup.aws.S3Client;
 import com.expediagroup.beekeeper.cleanup.aws.S3PathCleaner;
 import com.expediagroup.beekeeper.cleanup.aws.S3SentinelFilesCleaner;
@@ -56,20 +53,17 @@ public class CommonBeans {
 
   @Bean
   @Profile("default")
-  public AmazonS3 amazonS3() {
-    return AmazonS3ClientBuilder.defaultClient();
+  public software.amazon.awssdk.services.s3.S3Client amazonS3() {
+    return AwsS3ClientFactory.defaultClient();
   }
 
   @Bean
   @Profile("test")
-  public AmazonS3 amazonS3Test() {
+  public software.amazon.awssdk.services.s3.S3Client amazonS3Test() {
     String s3Endpoint = System.getProperty("aws.s3.endpoint");
     String region = System.getProperty("aws.region");
 
-    EndpointConfiguration endpointConfiguration = new EndpointConfiguration(s3Endpoint, region);
-    return AmazonS3ClientBuilder.standard()
-        .withEndpointConfiguration(endpointConfiguration)
-        .build();
+    return AwsS3ClientFactory.endpointClient(s3Endpoint, region);
   }
 
   @Bean
@@ -80,7 +74,9 @@ public class CommonBeans {
   }
 
   @Bean
-  public S3Client s3Client(AmazonS3 amazonS3, @Value("${properties.dry-run-enabled}") boolean dryRunEnabled) {
+  public S3Client s3Client(
+      software.amazon.awssdk.services.s3.S3Client amazonS3,
+      @Value("${properties.dry-run-enabled}") boolean dryRunEnabled) {
     return new S3Client(amazonS3, dryRunEnabled);
   }
 
