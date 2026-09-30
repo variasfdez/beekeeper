@@ -15,6 +15,7 @@
  */
 package com.expediagroup.beekeeper.metadata.cleanup.context;
 
+import java.net.URI;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -30,10 +31,11 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import io.micrometer.core.instrument.MeterRegistry;
-
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
 
 import com.expediagroup.beekeeper.cleanup.aws.S3Client;
 import com.expediagroup.beekeeper.cleanup.aws.S3PathCleaner;
@@ -115,20 +117,35 @@ public class CommonBeans {
 
   @Bean
   @Profile("default")
-  public AmazonS3 amazonS3() {
-    return AmazonS3ClientBuilder.defaultClient();
+  public software.amazon.awssdk.services.s3.S3Client amazonS3() {
+    return software.amazon.awssdk.services.s3.S3Client.create();
   }
 
   @Bean
   @Profile("test")
-  public AmazonS3 amazonS3Test() {
+  public software.amazon.awssdk.services.s3.S3Client amazonS3Test() {
     String s3Endpoint = System.getProperty("aws.s3.endpoint");
     String region = System.getProperty("aws.region");
 
-    return AmazonS3ClientBuilder
-        .standard()
-        .withEndpointConfiguration(new EndpointConfiguration(s3Endpoint, region))
+    return software.amazon.awssdk.services.s3.S3Client.builder()
+        .endpointOverride(URI.create(s3Endpoint))
+        .region(Region.of(region))
+        .forcePathStyle(true)
+        .credentialsProvider(testCredentialsProvider())
         .build();
+  }
+
+  /**
+   * SDK v2 reads the secret key from "aws.secretAccessKey" whereas v1 read it from "aws.secretKey",
+   * so credentials provided the v1 way are picked up explicitly here.
+   */
+  static AwsCredentialsProvider testCredentialsProvider() {
+    String accessKey = System.getProperty("aws.accessKeyId");
+    String secretKey = System.getProperty("aws.secretKey");
+    if (accessKey == null || secretKey == null) {
+      return DefaultCredentialsProvider.create();
+    }
+    return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey));
   }
 
   @Bean
@@ -139,7 +156,9 @@ public class CommonBeans {
   }
 
   @Bean
-  public S3Client s3Client(AmazonS3 amazonS3, @Value("${properties.dry-run-enabled}") boolean dryRunEnabled) {
+  public S3Client s3Client(
+      software.amazon.awssdk.services.s3.S3Client amazonS3,
+      @Value("${properties.dry-run-enabled}") boolean dryRunEnabled) {
     return new S3Client(amazonS3, dryRunEnabled);
   }
 

@@ -32,8 +32,8 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.micrometer.core.instrument.MeterRegistry;
-
-import com.amazonaws.services.s3.AmazonS3;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 
 import com.expediagroup.beekeeper.cleanup.aws.S3Client;
 import com.expediagroup.beekeeper.cleanup.aws.S3PathCleaner;
@@ -69,9 +69,15 @@ public class CommonBeansTest {
   private static final String AWS_REGION_PROPERTY = "aws.region";
   private static final String REGION = "us-west-2";
   private static final String AWS_ENDPOINT = String.join(".", "s3", REGION, "amazonaws.com");
-  private static final String ENDPOINT = "endpoint";
+  private static final String ENDPOINT_HOST = "endpoint";
+  // v2 endpointOverride requires an absolute URI, unlike v1 EndpointConfiguration
+  private static final String ENDPOINT = "http://" + ENDPOINT_HOST;
   private static final String BUCKET = "bucket";
   private static final String KEY = "key";
+  private static final String AWS_ACCESS_KEY_ID_PROPERTY = "aws.accessKeyId";
+  private static final String AWS_SECRET_KEY_PROPERTY = "aws.secretKey";
+  private static final String ACCESS_KEY = "access-key";
+  private static final String SECRET_KEY = "secret-key";
 
   private final CommonBeans commonBeans = new CommonBeans();
   private @Mock HousekeepingMetadataRepository metadataRepository;
@@ -134,21 +140,41 @@ public class CommonBeansTest {
 
   @Test
   public void typicalAmazonClient() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3();
-    URL url = amazonS3.getUrl(BUCKET, KEY);
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3();
+    URL url = getUrl(amazonS3);
     assertThat(url.getHost()).isEqualTo(String.join(".", BUCKET, AWS_ENDPOINT));
   }
 
   @Test
   public void endpointConfiguredAmazonClient() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3Test();
-    URL url = amazonS3.getUrl(BUCKET, KEY);
-    assertThat(url.getHost()).isEqualTo(String.join(".", BUCKET, ENDPOINT));
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3Test();
+    URL url = getUrl(amazonS3);
+    // path-style access: the bucket is in the path rather than the host
+    assertThat(url.getHost()).isEqualTo(ENDPOINT_HOST);
+    assertThat(url.getPath()).isEqualTo("/" + BUCKET + "/" + KEY);
+  }
+
+  @Test
+  void testClientReadsV1StyleCredentialSystemProperties() {
+    System.setProperty(AWS_ACCESS_KEY_ID_PROPERTY, ACCESS_KEY);
+    System.setProperty(AWS_SECRET_KEY_PROPERTY, SECRET_KEY);
+    try {
+      AwsCredentials credentials = CommonBeans.testCredentialsProvider().resolveCredentials();
+      assertThat(credentials.accessKeyId()).isEqualTo(ACCESS_KEY);
+      assertThat(credentials.secretAccessKey()).isEqualTo(SECRET_KEY);
+    } finally {
+      System.clearProperty(AWS_ACCESS_KEY_ID_PROPERTY);
+      System.clearProperty(AWS_SECRET_KEY_PROPERTY);
+    }
+  }
+
+  private URL getUrl(software.amazon.awssdk.services.s3.S3Client amazonS3) {
+    return amazonS3.utilities().getUrl(GetUrlRequest.builder().bucket(BUCKET).key(KEY).build());
   }
 
   @Test
   public void verifyS3Client() {
-    AmazonS3 amazonS3 = commonBeans.amazonS3Test();
+    software.amazon.awssdk.services.s3.S3Client amazonS3 = commonBeans.amazonS3Test();
     S3Client s3Client = new S3Client(amazonS3, false);
     S3Client beansS3Client = commonBeans.s3Client(amazonS3, false);
     assertThat(s3Client).isEqualToComparingFieldByField(beansS3Client);

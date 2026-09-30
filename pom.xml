@@ -39,6 +39,7 @@
 
   <properties>
     <aws-java-sdk.version>1.12.311</aws-java-sdk.version>
+    <aws-java-sdk-v2.version>2.55.6</aws-java-sdk-v2.version>
     <apache.commons.lang3>3.0</apache.commons.lang3>
     <assertj.version>3.25.3</assertj.version>
     <awaitility.version>4.2.0</awaitility.version>
@@ -65,6 +66,13 @@
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws-java-sdk-v2.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.awaitility</groupId>
         <artifactId>awaitility</artifactId>

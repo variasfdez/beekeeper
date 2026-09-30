@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 public class S3BytesDeletedCalculator {
 
@@ -32,15 +32,16 @@ public class S3BytesDeletedCalculator {
   }
 
   public void storeFileSize(String bucket, String key) {
-    long bytes = s3Client.getObjectMetadata(bucket, key).getContentLength();
+    long bytes = s3Client.getObjectMetadata(bucket, key).contentLength();
     keyToSize.put(key, bytes);
   }
 
-  public void storeFileSizes(List<S3ObjectSummary> objectSummaries) {
-    objectSummaries.forEach(objectSummary -> {
-      long bytes = objectSummary.getSize();
-      keyToSize.put(objectSummary.getKey(), bytes);
-    });
+  public void storeFileSizes(List<S3Object> objectSummaries) {
+    objectSummaries.forEach(
+        objectSummary -> {
+          long bytes = objectSummary.size();
+          keyToSize.put(objectSummary.key(), bytes);
+        });
   }
 
   public void calculateBytesDeleted(List<String> keysDeleted) {

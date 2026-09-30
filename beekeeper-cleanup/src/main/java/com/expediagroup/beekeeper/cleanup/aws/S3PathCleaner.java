@@ -23,7 +23,8 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import software.amazon.awssdk.services.s3.model.S3Object;
+
 import com.google.common.base.Strings;
 
 import com.expediagroup.beekeeper.cleanup.monitoring.BytesDeletedReporter;
@@ -82,11 +83,9 @@ public class S3PathCleaner implements PathCleaner {
     if (!key.endsWith("/")) {
       key += "/";
     }
-    List<S3ObjectSummary> objectSummaries = s3Client.listObjects(bucket, key);
+    List<S3Object> objectSummaries = s3Client.listObjects(bucket, key);
     bytesDeletedCalculator.storeFileSizes(objectSummaries);
-    List<String> keys = objectSummaries.stream()
-        .map(S3ObjectSummary::getKey)
-        .collect(Collectors.toList());
+    List<String> keys = objectSummaries.stream().map(S3Object::key).collect(Collectors.toList());
     List<String> deletedKeys = s3Client.deleteObjects(bucket, keys);
     bytesDeletedCalculator.calculateBytesDeleted(deletedKeys);
     int totalFiles = keys.size();
